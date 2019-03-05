@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test
+spec:
+  template:
+    spec:
+      containers:
+      - command:
+          - mvn
+          - test
+          - '-Dkey.url=http://key'
+          - '-Dkey.port=9095'
+          - '-Dfile.url=http://filedatabase'
+          - '-Dfile.port=9050'
+          - '-Ddataedge.url=http://dataedge'
+          - '-Ddataedge.port=9059'
+          - '-Dres.url=http://res'
+          - '-Dres.port=9090'
+        image: 'blankdots/test-data-api'
+        imagePullPolicy: Always
+        name: lega-test
+        ports:
+          - containerPort: 5050
+            name: lega-test
+            protocol: TCP
+      restartPolicy: Never

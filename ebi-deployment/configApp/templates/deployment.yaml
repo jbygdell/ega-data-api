@@ -1,14 +1,18 @@
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.image.metadata.config }}-configs
+  labels:
+    app: {{ .Values.image.metadata.config }}
+data:
+{{ ( .Files.Glob "config/*.properties" ).AsConfig | indent 2 }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: config-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.config }}
@@ -27,30 +31,35 @@ spec:
               tcpSocket:
                 port: {{ .Values.image.repository.config.port }}
               initialDelaySeconds: 60
-              periodSeconds: 60 
+              periodSeconds: 60
             volumeMounts:
-              - mountPath: "/log"
-                name: log-directory
+              - name: config
+                mountPath: /config-files
+                readOnly: true
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}      
-          nodeSelector:
-            group: {{ .Values.group.one }}  
+            - name: {{ .Values.image.imageSecrets }}
           volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}	
+            - name: config
+              projected:
+                sources:
+                  - configMap:
+                      name: {{ .Values.image.metadata.config }}-configs
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.image.metadata.postgres }}-initsql
+  labels:
+    app: {{ .Values.image.metadata.postgres }}
+data:
+  {{ ( .Files.Glob "conf/init.sql" ).AsConfig | indent 2 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
-          maxSurge: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.postgres }}
@@ -74,5 +83,16 @@ spec:
               value: /var/lib/postgresql/data/pgdata
             ports:
             - containerPort: {{ .Values.image.repository.postgres.port }}
-          nodeSelector:
-            group: {{ .Values.group.one }}			            
+            volumeMounts:
+              - name: initdb
+                mountPath: /docker-entrypoint-initdb.d
+                readOnly: true
+          volumes:
+            - name: initdb
+              projected:
+                sources:
+                  - configMap:
+                      name: {{ .Values.image.metadata.postgres }}-initsql
+                      items:
+                      - key: init.sql
+                        path: init.sql

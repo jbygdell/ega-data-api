@@ -1,15 +1,62 @@
-language: java
-
-services: docker
-
-jdk: oraclejdk8
-install:
-  # installing dependencies and skipping docker push
-  - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -DskipDockerPush
-
 cache:
   directories:
   - $HOME/.m2
 
-script:
-  - ./extras/travis_push_docker_hub.sh
+sudo: required
+install: true
+
+stages:
+  - name: unit tests
+    if: type IN (push, pull_request)
+  - name: integ tests
+    if: type IN (push, pull_request)
+
+jobs:
+  include:
+    # - stage: unit tests
+    #   dist: trusty
+    #   language: java
+    #   jdk: oraclejdk8
+    #   install:
+    #     # installing dependencies and skipping docker push
+    #     - mvn install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -DskipDockerPush
+    #   script:
+    #     - ./extras/travis_push_docker_hub.sh
+    - stage: integ tests
+      dist: xenial
+      sudo: required
+      env:
+        - CHANGE_MINIKUBE_NONE_USER=true
+      install: true
+      before_script:
+        # Download kubectl
+        - sudo apt update && sudo apt install socat
+        - wget https://github.com/kubernetes-sigs/kubeadm-dind-cluster/releases/download/v0.1.0/dind-cluster-v1.13.sh
+        - chmod +x dind-cluster-v1.13.sh
+        - ./dind-cluster-v1.13.sh up
+        - export PATH="$HOME/.kubeadm-dind-cluster:$PATH"
+        - curl -Lo kubectl https://storage.googleapis.com/kubernetes-release/release/v1.13.0/bin/linux/amd64/kubectl && chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+        - sleep 20
+        # - JSONPATH='{range .items[*]}{@.metadata.name}:{range @.status.conditions[*]}{@.type}={@.status};{end}{end}'; until kubectl get nodes -o jsonpath="$JSONPATH" 2>&1 | grep -q "Ready=True"; do sleep 1; done
+        - kubectl cluster-info
+        # - JSONPATH='{range .items[*]}{@.metadata.name}:{range @.status.conditions[*]}{@.type}={@.status};{end}{end}'; until kubectl -n kube-system get pods -lk8s-app=kube-dns -o jsonpath="$JSONPATH" 2>&1 | grep -q "Ready=True"; do sleep 1;echo "waiting for kube-dns to be available"; kubectl get pods --all-namespaces; done
+        - kubectl get nodes
+        # Download helm
+        - curl https://raw.githubusercontent.com/kubernetes/helm/v2.12.2/scripts/get > get_helm.sh && chmod 700 get_helm.sh && ./get_helm.sh
+        # create config files
+        - helm init
+        - sleep 20
+        - kubectl get po --namespace kube-system
+      script:
+        - cd ebi-deployment
+        - ./deploy.sh
+        - helm list
+        - sleep 180
+        - cd configApp
+        - kubectl create -f test.yml
+        - kubectl get pods
+        - sleep 20
+        - until kubectl get jobs test -o jsonpath='{.status.conditions[?(@.type=="Complete")].status}' | grep True ; do sleep 1 ; done
+
+notifications:
+  email: false

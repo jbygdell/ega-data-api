@@ -4,11 +4,6 @@ kind: Deployment
 metadata:
   name: eureka-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.eureka }}
@@ -31,28 +26,26 @@ spec:
                 port: {{ .Values.image.repository.eureka.port }}
               initialDelaySeconds: 60
               periodSeconds: 60
-            volumeMounts:
-              - mountPath: "/log"
-                name: log-directory 
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                
-          nodeSelector:
-            group: {{ .Values.group.one }}
-          volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}            
+            - name: {{ .Values.image.imageSecrets }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.image.metadata.key }}-keyserver-secret
+  labels:
+    app: {{ .Values.image.metadata.key }}
+data:
+{{ ( .Files.Glob "conf/sample.txt" ).AsSecrets | indent 2 }}
+{{ ( .Files.Glob "conf/pass.txt" ).AsSecrets | indent 2 }}
+{{ ( .Files.Glob "conf/testing.txt" ).AsSecrets | indent 2 }}
+{{ ( .Files.Glob "conf/legacy.txt" ).AsSecrets | indent 2 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: key-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.key }}
@@ -74,6 +67,16 @@ spec:
               value: {{ .Values.db.password }}
             - name: DB_URL
               value: {{ .Values.db.url }}
+            - name: EGA_KEY_PATH
+              value: /etc/ega/pgp/key.1.sec
+            - name: EGA_KEYPASS_PATH
+              value: /etc/ega/pgp/key.1.sec.pass
+            - name: EGA_SHAREDPASS_PATH
+              value: /etc/ega/pgp/shared.pass
+            - name: EGA_PUBLICKEY_URL
+              value:
+            - name: EGA_LEGACY_PATH
+              value: /etc/ega/pgp/legacy.txt
             ports:
             - containerPort: {{ .Values.image.repository.key.port }}
             livenessProbe:
@@ -82,27 +85,31 @@ spec:
               initialDelaySeconds: 60
               periodSeconds: 60
             volumeMounts:
-              - mountPath: "/log"
-                name: log-directory
-          imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                 
-          nodeSelector:
-            group: {{ .Values.group.one }}
+              - name: keyserver-pgpkeys
+                mountPath: /etc/ega/pgp
           volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}
+            - name: keyserver-pgpkeys
+              projected:
+                sources:
+                  - secret:
+                      name: {{ .Values.image.metadata.key }}-keyserver-secret
+                      items:
+                      - key: sample.txt
+                        path: key.1.sec
+                      - key: testing.txt
+                        path: shared.pass
+                      - key: pass.txt
+                        path: key.1.sec.pass
+                      - key: legacy.txt
+                        path: legacy.txt
+          imagePullSecrets:
+            - name: {{ .Values.image.imageSecrets }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: filedatabase-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.filedatabase }}          
@@ -131,28 +138,14 @@ spec:
                 port: {{ .Values.image.repository.filedatabase.port }}
               initialDelaySeconds: 60
               periodSeconds: 60
-            volumeMounts:
-              - mountPath: "/log"
-                name: log-directory              
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                
-          nodeSelector:
-            group: {{ .Values.group.one }}
-          volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}            
+            - name: {{ .Values.image.imageSecrets }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: res-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.res }} 
@@ -183,28 +176,23 @@ spec:
                 port: {{ .Values.image.repository.res.port }}
               initialDelaySeconds: 60
               periodSeconds: 60
-            volumeMounts:
-              - mountPath: "/log"
-                name: log-directory
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                
-          nodeSelector:
-            group: {{ .Values.group.one }}
-          volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}
+            - name: {{ .Values.image.imageSecrets }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.image.metadata.dataedge }}-dataedge-public-key
+  labels:
+    app: {{ .Values.image.metadata.dataedge }}
+data:
+{{ ( .Files.Glob "conf/public.key" ).AsConfig | indent 2 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: dataedge-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.dataedge }} 
@@ -220,6 +208,11 @@ spec:
             env:
             - name: CONFIG_SERVICE
               value: {{ .Values.configService }}
+            - name: JWTKEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.image.metadata.dataedge }}-dataedge-public-key
+                  key: public.key
             ports:
             - containerPort: {{ .Values.image.repository.dataedge.port }}
             livenessProbe:
@@ -227,28 +220,14 @@ spec:
                 port: {{ .Values.image.repository.dataedge.port }}
               initialDelaySeconds: 60
               periodSeconds: 60
-            volumeMounts:
-              - mountPath: "/log"
-                name: log-directory
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                
-          nodeSelector:
-            group: {{ .Values.group.one }}
-          volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}
+            - name: {{ .Values.image.imageSecrets }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: htsget-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.htsget }} 
@@ -271,28 +250,14 @@ spec:
                 port: {{ .Values.image.repository.htsget.port }}
               initialDelaySeconds: 60
               periodSeconds: 60
-            volumeMounts:
-              - mountPath: "/log"
-                name: log-directory
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                
-          nodeSelector:
-            group: {{ .Values.group.one }}
-          volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}
+            - name: {{ .Values.image.imageSecrets }}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: hystrix-deploy
 spec:
-  replicas: {{ .Values.replicaCount.one }}
-  strategy:
-        type: RollingUpdate
-        rollingUpdate:
-          maxUnavailable: {{ .Values.replicaCount.one }}
   selector:
         matchLabels:
           app: {{ .Values.image.metadata.hystrix }} 
@@ -312,14 +277,5 @@ spec:
                 port: {{ .Values.image.repository.hystrix.port }}
               initialDelaySeconds: 60
               periodSeconds: 60
-            volumeMounts:
-              - mountPath: "/log"
-                name: log-directory
           imagePullSecrets:
-            - name: {{ .Values.image.imageSecrets }}                
-          nodeSelector:
-            group: {{ .Values.group.one }}
-          volumes:
-            - name: log-directory
-              hostPath:
-                path: {{ .Values.logdirectory.path }}                       
+            - name: {{ .Values.image.imageSecrets }}
