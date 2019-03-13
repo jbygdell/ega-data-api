@@ -33,8 +33,8 @@ maven_push () {
 }
 
 
-printf '%s\n' "$DOCKER_PASSWORD" |
-docker login -u "$DOCKER_USER" --password-stdin
+#printf '%s\n' "$DOCKER_PASSWORD" |
+#docker login -u "$DOCKER_USER" --password-stdin
 
 ## Travis run on master branch and not a PR (this is after a PR has been approved)
 if  [ "$TRAVIS_BRANCH" = "master" ] &&
@@ -42,5 +42,6 @@ if  [ "$TRAVIS_BRANCH" = "master" ] &&
 then
     push_images alpine api
 else
-    mvn clean install -DskipDockerPush
+    mvn clean install -DskipDockerPush -Dmaven.test.skip=true  -Dmaven.site.skip=true -Dmaven.javadoc.skip=true
+    docker images
 fi
