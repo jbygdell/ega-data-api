@@ -1,5 +1,6 @@
 FROM maven:3.6.0-jdk-8-alpine as builder
 COPY . .
+RUN ls
 # Here we skip tests to save time, because if this image is being built - tests have already passed...
 RUN cd ega-data-api-res && mvn clean install -DskipTests=true -Dmaven.javadoc.skip=true -B -V -DskipDockerPush -DskipDockerBuild
 
